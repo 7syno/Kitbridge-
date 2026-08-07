@@ -14,7 +14,11 @@ jobs:
 
       - name: Unzip Project Files
         run: |
-          find . -maxdepth 1 -name "*.zip" -exec unzip -o {} \;
+          for f in *; do
+            if file "$f" | grep -q "Zip archive"; then
+              unzip -o "$f"
+            fi
+          done
 
       - name: Setup Java JDK
         uses: actions/setup-java@v4
@@ -22,17 +26,45 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Build APK with Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Fix Missing Android Root Files & Build
         run: |
-          GRADLEW_PATH=$(find . -name "gradlew" -type f | head -n 1)
-          if [ -z "$GRADLEW_PATH" ]; then
-            echo "Error: gradlew file not found!"
+          APP_DIR=$(find . -type d -name "app" | head -n 1)
+          if [ -z "$APP_DIR" ]; then
+            echo "Error: app directory not found!"
             exit 1
           fi
-          GRADLE_DIR=$(dirname "$GRADLEW_PATH")
-          cd "$GRADLE_DIR"
-          chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          
+          ANDROID_DIR=$(dirname "$APP_DIR")
+          cd "$ANDROID_DIR"
+          
+          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+            echo "include ':app'" > settings.gradle
+          fi
+
+          if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
+            cat << 'EOF' > build.gradle
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.1'
+    }
+}
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+EOF
+          fi
+
+          gradle :app:assembleDebug --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
