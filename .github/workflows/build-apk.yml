@@ -20,51 +20,46 @@ jobs:
             fi
           done
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - name: Setup Capacitor Dependencies
+        run: |
+          CAP_DIR=$(dirname $(find . -name "capacitor.config.ts" | head -n 1))
+          cd "$CAP_DIR"
+          if [ ! -f "package.json" ]; then
+            npm init -y
+          fi
+          npm install @capacitor/core@5 @capacitor/android@5 @capacitor/cli@5
 
-      - name: Fix Missing Android Root Files & Build
+      - name: Build APK with Gradle
         run: |
           APP_DIR=$(find . -type d -name "app" | head -n 1)
-          if [ -z "$APP_DIR" ]; then
-            echo "Error: app directory not found!"
-            exit 1
-          fi
-          
           ANDROID_DIR=$(dirname "$APP_DIR")
           cd "$ANDROID_DIR"
-          
-          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
-            echo "include ':app'" > settings.gradle
-          fi
 
-          if [ ! -f "build.gradle" ] && [ ! -f "build.gradle.kts" ]; then
-            cat << 'EOF' > build.gradle
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.1.1'
-    }
-}
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+          if [ ! -f "settings.gradle" ]; then
+            cat << 'EOF' > settings.gradle
+include ':app'
+include ':capacitor-android'
+project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/android/capacitor')
 EOF
           fi
 
-          gradle :app:assembleDebug --stacktrace
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
